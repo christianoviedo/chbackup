@@ -1,0 +1,129 @@
+#!/bin/bash
+
+# VERSION 0.5.1
+
+# make sure we're running as root
+if [ `id -u` -gt 0 ]; then { echo "Sorry, must be root.  Exiting..."; exit; } fi
+
+# load config values
+source /etc/chbackup/backup.conf
+
+# step 0: create dirs if not exist
+if ! ssh $USER@$SERVER stat $SERVER_DIR/backup > /dev/null 2>&1 ; then
+	ssh $USER@$SERVER mkdir -p $SERVER_DIR/backup
+fi
+if ! ssh $USER@$SERVER stat $SERVER_DIR/mysql > /dev/null 2>&1 ; then
+	ssh $USER@$SERVER mkdir -p $SERVER_DIR/mysql
+fi
+if ! ssh $USER@$SERVER stat $SERVER_DIR/mysql/db > /dev/null 2>&1 ; then
+	ssh $USER@$SERVER mkdir -p $SERVER_DIR/mysql/db
+fi
+
+# -------------------------------------------- #
+# ---------- Begin Files Backup -------------- #
+# -------------------------------------------- #
+
+# if files dir is set, do database backup
+if [ ! -z "$LOCAL_DIR" ]; then 
+
+# step 1: delete the oldest snapshot, if it exists:
+if ssh $USER@$SERVER stat $SERVER_DIR/backup/daily.$TOT_BKP > /dev/null 2>&1 ; then
+	ssh $USER@$SERVER chmod -R u+w $SERVER_DIR/backup/daily.$TOT_BKP 
+	ssh $USER@$SERVER rm -rf $SERVER_DIR/backup/daily.$TOT_BKP
+fi
+
+# step 2: shift the middle snapshots(s) back by one, if they exist
+i=$TOT_BKP
+while [ "$i" -gt 1 ]; do 
+	j=$(($i-1))
+	if ssh $USER@$SERVER stat $SERVER_DIR/backup/daily.$j > /dev/null 2>&1 ; then
+		ssh $USER@$SERVER mv $SERVER_DIR/backup/daily.$j $SERVER_DIR/backup/daily.$i
+	fi
+	i=$((i-1))
+done
+
+# step 3: make a hard-link-only (except for dirs) copy of the daily snapshot, if that exists
+if ssh $USER@$SERVER stat $SERVER_DIR/backup/daily.0 > /dev/null 2>&1 ; then
+	ssh $USER@$SERVER cp -al $SERVER_DIR/backup/daily.0 $SERVER_DIR/backup/daily.1
+fi
+
+# step 4: rsync from the system into the latest snapshot
+rsync -avzq --delete --exclude-from '/etc/chbackup/exclude-list.conf' --log-file=$LOGFILE $LOCAL_DIR $USER@$SERVER:$SERVER_DIR/backup/daily.0/
+
+# step 5: update the mtime of daily.0 to reflect the snapshot time
+ssh $USER@$SERVER touch $SERVER_DIR/backup/daily.0
+
+# end if files backup
+fi
+
+# -------------------------------------------- #
+# ---------- Begin Mysql Backup -------------- #
+# -------------------------------------------- #
+
+# if mysql user is set, do database backup
+if [ ! -z "$MYSQL_USER" ]; then 
+
+# step 6: delete the oldest database, if it exists:
+if ssh $USER@$SERVER stat $SERVER_DIR/mysql/all_mysql.sql.daily.$TOT_BKP.gz > /dev/null 2>&1 ; then
+	ssh $USER@$SERVER rm $SERVER_DIR/mysql/all_mysql.sql.daily.$TOT_BKP.gz
+fi
+
+# step 7: shift the middle snapshots(s) back by one, if they exist
+i=$TOT_BKP
+while [ "$i" -gt 0 ]; do
+        j=$(($i-1))
+	if ssh $USER@$SERVER stat $SERVER_DIR/mysql/all_mysql.sql.daily.$j.gz > /dev/null 2>&1 ; then
+		ssh $USER@$SERVER mv $SERVER_DIR/mysql/all_mysql.sql.daily.$j.gz $SERVER_DIR/mysql/all_mysql.sql.daily.$i.gz
+	fi
+	i=$((i-1))
+done
+        
+# step 8: dump local database to temporary file
+PASS=
+if [ ! -z "$MYSQL_PASS" ]; then 
+	PASS=-p$MYSQL_PASS
+fi
+mysqldump -A --events -u $MYSQL_USER $PASS > /tmp/all_mysql.sql.daily.0
+gzip /tmp/all_mysql.sql.daily.0
+
+# step 9: copy local database dump to server
+scp /tmp/all_mysql.sql.daily.0.gz $USER@$SERVER:$SERVER_DIR/mysql
+
+# step 10: remove local temp dump file
+rm /tmp/all_mysql.sql.daily.0.gz
+
+# step 11: get list of local databases
+databases=`mysql --user=$MYSQL_USER $PASS -e "SHOW DATABASES;" | grep -Ev "(Database|information_schema|performance_schema)"`
+
+# step 12: for each local database
+for db in $databases; do
+
+	# step 13: delete oldest database if it exists
+	if ssh $USER@$SERVER stat $SERVER_DIR/mysql/db/$db.sql.daily.$TOT_BKP.gz > /dev/null 2>&1 ; then
+		ssh $USER@$SERVER rm $SERVER_DIR/mysql/db/$db.sql.daily.$TOT_BKP.gz
+	fi
+	
+	# step 14: shift the middle snapshots(s) back by one, if they exist
+	i=$TOT_BKP
+	while [ "$i" -gt 0 ]; do
+		j=$(($i-1))
+		if ssh $USER@$SERVER stat $SERVER_DIR/mysql/db/$db.sql.daily.$j.gz > /dev/null 2>&1 ; then
+			ssh $USER@$SERVER mv $SERVER_DIR/mysql/db/$db.sql.daily.$j.gz $SERVER_DIR/mysql/db/$db.sql.daily.$i.gz
+		fi
+		i=$((i-1))
+	done
+		
+	# step 15: dump local database to temporary file
+	mysqldump --force --opt --user=$MYSQL_USER $PASS --databases $db | gzip > "/tmp/$db.sql.daily.0.gz"
+	
+	# step 16: copy local database dump to server
+	scp /tmp/$db.sql.daily.0.gz $USER@$SERVER:$SERVER_DIR/mysql/db/
+	
+	# step 17: remove local temp dump file
+	rm /tmp/$db.sql.daily.0.gz
+	
+# step 12-end: for each local database
+done
+
+# if database backup
+fi
