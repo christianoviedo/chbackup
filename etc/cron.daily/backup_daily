@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# VERSION 0.5.1
+# VERSION 0.5.2
 
 # make sure we're running as root
 if [ `id -u` -gt 0 ]; then { echo "Sorry, must be root.  Exiting..."; exit; } fi
