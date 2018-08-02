@@ -114,7 +114,7 @@ for db in $databases; do
 	done
 		
 	# step 15: dump local database to temporary file
-	mysqldump --force --opt --user=$MYSQL_USER $PASS --databases $db | gzip > "/tmp/$db.sql.daily.0.gz"
+	mysqldump --events --ignore-table=mysql.event --force --opt --user=$MYSQL_USER $PASS --databases $db | gzip > "/tmp/$db.sql.daily.0.gz"
 	
 	# step 16: copy local database dump to server
 	scp /tmp/$db.sql.daily.0.gz $USER@$SERVER:$SERVER_DIR/mysql/db/
