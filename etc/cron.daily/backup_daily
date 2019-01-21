@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# VERSION 0.5.1
+# VERSION 0.5.2
 
 # make sure we're running as root
 if [ `id -u` -gt 0 ]; then { echo "Sorry, must be root.  Exiting..."; exit; } fi
@@ -83,7 +83,7 @@ PASS=
 if [ ! -z "$MYSQL_PASS" ]; then 
 	PASS=-p$MYSQL_PASS
 fi
-mysqldump -A --events -u $MYSQL_USER $PASS > /tmp/all_mysql.sql.daily.0
+mysqldump -A --routines --create-options --events --opt -u $MYSQL_USER $PASS > /tmp/all_mysql.sql.daily.0
 gzip /tmp/all_mysql.sql.daily.0
 
 # step 9: copy local database dump to server
@@ -114,7 +114,7 @@ for db in $databases; do
 	done
 		
 	# step 15: dump local database to temporary file
-	mysqldump --force --opt --user=$MYSQL_USER $PASS --databases $db | gzip > "/tmp/$db.sql.daily.0.gz"
+	mysqldump --routines --create-options --force --opt --single-transaction --user=$MYSQL_USER $PASS --databases $db | gzip > "/tmp/$db.sql.daily.0.gz"
 	
 	# step 16: copy local database dump to server
 	scp /tmp/$db.sql.daily.0.gz $USER@$SERVER:$SERVER_DIR/mysql/db/
