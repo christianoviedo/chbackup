@@ -83,7 +83,7 @@ PASS=
 if [ ! -z "$MYSQL_PASS" ]; then 
 	PASS=-p$MYSQL_PASS
 fi
-mysqldump -A --routines --create-options --events --opt -u $MYSQL_USER $PASS > /tmp/all_mysql.sql.daily.0
+mysqldump -A --routines --create-options --events --ignore-table=mysql.event --opt -u $MYSQL_USER $PASS > /tmp/all_mysql.sql.daily.0
 gzip /tmp/all_mysql.sql.daily.0
 
 # step 9: copy local database dump to server
