@@ -40,4 +40,9 @@ shell# /etc/cron.daily/backup_daily
 shell# tail -f /var/log/backup.log
 ```
 
+5. BD permissions
+BD must have permissions for full reading
+```
+grant select, lock tables, event, show view on *.* to backup@localhost;
+```
 
