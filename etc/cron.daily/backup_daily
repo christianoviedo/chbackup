@@ -48,7 +48,8 @@ if ssh $USER@$SERVER stat $SERVER_DIR/backup/daily.0 > /dev/null 2>&1 ; then
 fi
 
 # step 4: rsync from the system into the latest snapshot
-rsync -avzq --delete --exclude-from '/etc/chbackup/exclude-list.conf' --log-file=$LOGFILE $LOCAL_DIR $USER@$SERVER:$SERVER_DIR/backup/daily.0/
+if [ ! -z $DELETE_MISSING ] && [ "$DELETE_MISSING" = "1" ]; then do_delete='--delete'; fi
+rsync -avzq $do_delete --exclude-from '/etc/chbackup/exclude-list.conf' --log-file=$LOGFILE $LOCAL_DIR $USER@$SERVER:$SERVER_DIR/backup/daily.0/
 
 # step 5: update the mtime of daily.0 to reflect the snapshot time
 ssh $USER@$SERVER touch $SERVER_DIR/backup/daily.0
