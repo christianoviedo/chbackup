@@ -1,12 +1,14 @@
 #!/bin/bash
 
-# VERSION 0.5.2
+# VERSION 0.5.3
 
 # make sure we're running as root
 if [ `id -u` -gt 0 ]; then { echo "Sorry, must be root.  Exiting..."; exit; } fi
 
 # load config values
-source /etc/chbackup/backup.conf
+BACKUP_CONFIG_FILE=/etc/chbackup/backup.conf
+MYSQL_CONFIG_FILE=/etc/chbackup/mysql.conf
+source $BACKUP_CONFIG_FILE
 
 # step 0: create dirs if not exist
 if ! ssh $USER@$SERVER stat $SERVER_DIR/backup > /dev/null 2>&1 ; then
@@ -62,7 +64,7 @@ fi
 # -------------------------------------------- #
 
 # if mysql user is set, do database backup
-if [ ! -z "$MYSQL_USER" ]; then 
+if [ ! -z "$DO_MYSQL_BACKUP" ]; then 
 
 # step 6: delete the oldest database, if it exists:
 if ssh $USER@$SERVER stat $SERVER_DIR/mysql/all_mysql.sql.daily.$TOT_BKP.gz > /dev/null 2>&1 ; then
@@ -79,19 +81,8 @@ while [ "$i" -gt 0 ]; do
 	i=$((i-1))
 done
 
-# set user, password and host to avoid warning messages
-mysql_config_editor reset
-unbuffer expect -c "
-spawn mysql_config_editor set --login-path=local --host=localhost --user=$MYSQL_USER --password
-expect -nocase \"Enter password:\" {send \"$MYSQL_PASS\r\"; interact}
-"
-
 # step 8: dump local database to temporary file
-PASS=
-if [ ! -z "$MYSQL_PASS" ]; then 
-	PASS=-p$MYSQL_PASS
-fi
-mysqldump --login-path=local -A --routines --create-options --events --ignore-table=mysql.event --opt > /tmp/all_mysql.sql.daily.0
+mysqldump --defaults-extra-file=$MYSQL_CONFIG_FILE -A --routines --create-options --events --ignore-table=mysql.event --opt > /tmp/all_mysql.sql.daily.0
 gzip /tmp/all_mysql.sql.daily.0
 
 # step 9: copy local database dump to server
@@ -101,7 +92,7 @@ scp /tmp/all_mysql.sql.daily.0.gz $USER@$SERVER:$SERVER_DIR/mysql
 rm /tmp/all_mysql.sql.daily.0.gz
 
 # step 11: get list of local databases
-databases=`mysql --login-path=local -e "SHOW DATABASES;" | grep -Ev "(Database|information_schema|performance_schema)"`
+databases=`mysql --defaults-extra-file=$MYSQL_CONFIG_FILE -e "SHOW DATABASES;" | grep -Ev "(Database|information_schema|performance_schema)"`
 
 # step 12: for each local database
 for db in $databases; do
@@ -122,7 +113,7 @@ for db in $databases; do
 	done
 		
 	# step 15: dump local database to temporary file
-	mysqldump --login-path=local --routines --events --ignore-table=mysql.event --force --opt --single-transaction --databases $db | gzip > "/tmp/$db.sql.daily.0.gz"
+	mysqldump --defaults-extra-file=$MYSQL_CONFIG_FILE --routines --events --ignore-table=mysql.event --force --opt --single-transaction --databases $db | gzip > "/tmp/$db.sql.daily.0.gz"
 	
 	# step 16: copy local database dump to server
 	scp /tmp/$db.sql.daily.0.gz $USER@$SERVER:$SERVER_DIR/mysql/db/

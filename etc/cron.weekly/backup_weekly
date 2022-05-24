@@ -1,12 +1,14 @@
 #!/bin/bash
 
-# VERSION 0.5
+# VERSION 0.5.3
 
 # make sure we're running as root
 if [ `id -u` -gt 0 ]; then { echo "Sorry, must be root.  Exiting..."; exit; } fi
 
 # load config values
-source /etc/chbackup/backup.conf
+BACKUP_CONFIG_FILE=/etc/chbackup/backup.conf
+MYSQL_CONFIG_FILE=/etc/chbackup/mysql.conf
+source $BACKUP_CONFIG_FILE
 
 # step 0: create dirs if not exist
 if ! ssh $USER@$SERVER stat $SERVER_DIR/backup > /dev/null 2>&1 ; then
@@ -55,7 +57,7 @@ fi
 # -------------------------------------------- #
 
 # if mysql user is set, do database backup
-if [ ! -z "$MYSQL_USER" ]; then 
+if [ ! -z "$DO_MYSQL_BACKUP" ]; then 
 
 # step 4: delete the oldest database, if it exists:
 if ssh $USER@$SERVER stat $SERVER_DIR/mysql/all_mysql.sql.weekly.$TOT_BKP.gz > /dev/null 2>&1 ; then
@@ -78,11 +80,7 @@ if ssh $USER@$SERVER stat $SERVER_DIR/mysql/all_mysql.sql.daily.0.gz > /dev/null
 fi
 
 # step 7: get list of local databases
-PASS=
-if [ ! -z "$MYSQL_PASS" ]; then 
-	PASS=-p$MYSQL_PASS
-fi
-databases=`mysql --user=$MYSQL_USER $PASS -e "SHOW DATABASES;" | grep -Ev "(Database|information_schema|performance_schema)"`
+databases=`mysql --defaults-extra-file=$MYSQL_CONFIG_FILE -e "SHOW DATABASES;" | grep -Ev "(Database|information_schema|performance_schema)"`
 
 # step 8: for each local database
 for db in $databases; do
