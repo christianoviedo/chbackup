@@ -6,6 +6,7 @@ Default daily and weekly backups.
 All files must be installed in servers which contains files to be copied.
 The processes work with cron, you can adjust the time if you want.
 The connection between servers must be done with ssh public key auth.
+Connection with remote server MUST be done with ssh public/private key.
 
 ## Installing
 1. Copy etc files to your server. After you must have the following structure:
@@ -21,26 +22,31 @@ The connection between servers must be done with ssh public key auth.
 USER=<user name in backup server>
 SERVER=<IP or server name>
 SERVER_DIR=<Remote directory to store files (for multiple servers)>
-LOCAL_DIR=<Local directory to be backup>
-MYSQL_USER=<Local user of mysql>
-MYSQL_PASS=<Local mysql password>
+LOCAL_DIR=<Local directory to backup>
+DO_MYSQL_BACKUP=1 # do mysql backup?
 LOGFILE=/var/log/backup.log
 TOT_BKP=3 # amount of historic backups to keep on remote server
+DELETE_MISSING=1 # remove locally deleted files from backup server
 ```
 
-3. Assign execution permissions to backup scripts and test
+3. If mysql backup edit mysql.conf with local user/pass
+[client]
+user=
+password=
+
+4. Assign execution permissions to backup scripts and test
 ```
 shell# chmod 755 /etc/cron.daily/backup_daily
 shell# chmod 755 /etc/cron.weekly/backup.weekly
 shell# /etc/cron.daily/backup_daily
 ```
 
-4. Check log file
+5. Check log file
 ```
 shell# tail -f /var/log/backup.log
 ```
 
-5. BD permissions
+6. BD permissions
 BD must have permissions for full reading
 ```
 grant select, lock tables, event, show view on *.* to backup@localhost;
