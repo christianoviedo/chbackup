@@ -57,7 +57,7 @@ fi
 # -------------------------------------------- #
 
 # if mysql user is set, do database backup
-if [ ! -z "$DO_MYSQL_BACKUP" ]; then 
+if [[ $DO_MYSQL_BACKUP =~ ^[1YySs]$ ]]; then
 
 # step 4: delete the oldest database, if it exists:
 if ssh $USER@$SERVER stat $SERVER_DIR/mysql/all_mysql.sql.weekly.$TOT_BKP.gz > /dev/null 2>&1 ; then
