@@ -49,6 +49,6 @@ shell# tail -f /var/log/backup.log
 6. BD permissions
 BD must have permissions for full reading
 ```
-grant select, lock tables, event, show view on *.* to backup@localhost;
+grant select, lock tables, event, show view, process on *.* to backup@localhost;
 ```
 
