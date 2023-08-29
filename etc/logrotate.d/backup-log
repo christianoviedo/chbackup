@@ -1,8 +1,9 @@
 /var/log/backup.log {
-	daily
-	rotate 15
+	weekly
+	rotate 7
 	missingok
 	compress
 	delaycompress
 	notifempty
+	create 0640 www-data adm
 }
