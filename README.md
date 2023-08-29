@@ -15,6 +15,7 @@ Connection with remote server MUST be done with ssh public/private key.
 /etc/cron.weekly/backup.weekly
 /etc/chbackup/backup.conf
 /etc/chbackup/exclude-list.conf
+/etc/logrotate.d/backup-log
 ```
 
 2. Edit backup.conf file
