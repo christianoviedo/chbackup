@@ -144,8 +144,8 @@ while [ "$i" -gt 0 ]; do
 done
 
 # step 6: copy the daily database to weekly, if it exists
-if ssh $USER@$SERVER stat $SERVER_DIR/mysql/all_pgsql.sql.daily.0.gz > /dev/null 2>&1 ; then
-	ssh $USER@$SERVER cp $SERVER_DIR/mysql/all_pgsql.sql.daily.0.gz $SERVER_DIR/mysql/all_pgsql.sql.weekly.0.gz
+if ssh $USER@$SERVER stat $SERVER_DIR/pgsql/all_pgsql.sql.daily.0.gz > /dev/null 2>&1 ; then
+	ssh $USER@$SERVER cp $SERVER_DIR/pgsql/all_pgsql.sql.daily.0.gz $SERVER_DIR/pgsql/all_pgsql.sql.weekly.0.gz
 fi
 
 # step 11: get list of local databases
