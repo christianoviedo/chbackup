@@ -8,6 +8,10 @@ The processes work with cron, you can adjust the time if you want.
 The connection between servers must be done with ssh public key auth.
 Connection with remote server MUST be done with ssh public/private key.
 
+For postgresql backup you need to give access to replicate and access for user postgres, like this
+local   all             postgres        trust
+local   replication     postgres        trust
+
 ## Installing
 1. Copy etc files to your server. After you must have the following structure:
 ```
