@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# VERSION 0.5.3
+# VERSION 0.5.4
 
 # make sure we're running as root
 if [ `id -u` -gt 0 ]; then { echo "Sorry, must be root.  Exiting..."; exit; } fi
@@ -10,23 +10,17 @@ BACKUP_CONFIG_FILE=/etc/chbackup/backup.conf
 MYSQL_CONFIG_FILE=/etc/chbackup/mysql.conf
 source $BACKUP_CONFIG_FILE
 
-# step 0: create dirs if not exist
-if ! ssh $USER@$SERVER stat $SERVER_DIR/backup > /dev/null 2>&1 ; then
-	ssh $USER@$SERVER mkdir -p $SERVER_DIR/backup
-fi
-if ! ssh $USER@$SERVER stat $SERVER_DIR/mysql > /dev/null 2>&1 ; then
-	ssh $USER@$SERVER mkdir -p $SERVER_DIR/mysql
-fi
-if ! ssh $USER@$SERVER stat $SERVER_DIR/mysql/db > /dev/null 2>&1 ; then
-	ssh $USER@$SERVER mkdir -p $SERVER_DIR/mysql/db
-fi
-
 # -------------------------------------------- #
 # ---------- Begin Files Backup -------------- #
 # -------------------------------------------- #
 
 # if files dir is set, do database backup
 if [ ! -z "$LOCAL_DIR" ]; then 
+
+# step 0: create dirs if not exist
+if ! ssh $USER@$SERVER stat $SERVER_DIR/backup > /dev/null 2>&1 ; then
+        ssh $USER@$SERVER mkdir -p $SERVER_DIR/backup
+fi
 
 # step 1: delete the oldest snapshot, if it exists:
 if ssh $USER@$SERVER stat $SERVER_DIR/backup/daily.$TOT_BKP > /dev/null 2>&1 ; then
@@ -65,6 +59,14 @@ fi
 
 # if mysql user is set, do database backup
 if [[ $DO_MYSQL_BACKUP =~ ^[1YySs]$ ]]; then
+
+# step 0: create dirs if not exist
+if ! ssh $USER@$SERVER stat $SERVER_DIR/mysql > /dev/null 2>&1 ; then
+        ssh $USER@$SERVER mkdir -p $SERVER_DIR/mysql
+fi
+if ! ssh $USER@$SERVER stat $SERVER_DIR/mysql/db > /dev/null 2>&1 ; then
+        ssh $USER@$SERVER mkdir -p $SERVER_DIR/mysql/db
+fi
 
 # step 6: delete the oldest database, if it exists:
 if ssh $USER@$SERVER stat $SERVER_DIR/mysql/all_mysql.sql.daily.$TOT_BKP.gz > /dev/null 2>&1 ; then
@@ -121,6 +123,83 @@ for db in $databases; do
 	# step 17: remove local temp dump file
 	rm /tmp/$db.sql.daily.0.gz
 	
+# step 12-end: for each local database
+done
+
+# if database backup
+fi
+
+# ------------------------------------------------- #
+# ---------- Begin PostgreSQL Backup -------------- #
+# ------------------------------------------------- #
+
+# if mysql user is set, do database backup
+if [[ $DO_PGSQL_BACKUP =~ ^[1YySs]$ ]]; then
+
+# step 0: create dirs if not exist
+if ! ssh $USER@$SERVER stat $SERVER_DIR/pgsql > /dev/null 2>&1 ; then
+        ssh $USER@$SERVER mkdir -p $SERVER_DIR/pgsql
+fi
+if ! ssh $USER@$SERVER stat $SERVER_DIR/pgsql/db > /dev/null 2>&1 ; then
+        ssh $USER@$SERVER mkdir -p $SERVER_DIR/pgsql/db
+fi
+
+# step 6: delete the oldest database, if it exists:
+if ssh $USER@$SERVER stat $SERVER_DIR/pgsql/all_pgsql.sql.daily.$TOT_BKP.gz > /dev/null 2>&1 ; then
+        ssh $USER@$SERVER rm $SERVER_DIR/pgsql/all_pgsql.sql.daily.$TOT_BKP.gz
+fi
+
+# step 7: shift the middle snapshots(s) back by one, if they exist
+i=$TOT_BKP
+while [ "$i" -gt 0 ]; do
+        j=$(($i-1))
+        if ssh $USER@$SERVER stat $SERVER_DIR/pgsql/all_pgsql.sql.daily.$j.gz > /dev/null 2>&1 ; then
+                ssh $USER@$SERVER mv $SERVER_DIR/pgsql/all_pgsql.sql.daily.$j.gz $SERVER_DIR/pgsql/all_pgsql.sql.daily.$i.gz
+        fi
+        i=$((i-1))
+done
+
+# step 8: dump local databases to temporary file (pg_basebackup makes a tar)
+pg_basebackup -Ft -Xs -D /tmp/all_pgsql.sql.daily.0 -U postgres -p 5432
+tar zcvf /tmp/all_pgsql.sql.daily.0.gz /tmp/all_pgsql.sql.daily.0
+rm -rf /tmp/all_pgsql.sql.daily.0
+
+# step 9: copy local database dump to server
+scp /tmp/all_pgsql.sql.daily.0.gz $USER@$SERVER:$SERVER_DIR/pgsql
+
+# step 10: remove local temp dump file
+rm /tmp/all_pgsql.sql.daily.0.gz
+
+# step 11: get list of local databases
+databases=`echo "SELECT datname FROM pg_database;" | psql -U postgres | tail -n +3 | head -n -2 | egrep -v 'template0|template1'`
+
+# step 12: for each local database
+for db in $databases; do
+
+        # step 13: delete oldest database if it exists
+        if ssh $USER@$SERVER stat $SERVER_DIR/pgsql/db/$db.sql.daily.$TOT_BKP.gz > /dev/null 2>&1 ; then
+                ssh $USER@$SERVER rm $SERVER_DIR/pgsql/db/$db.sql.daily.$TOT_BKP.gz
+        fi
+
+        # step 14: shift the middle snapshots(s) back by one, if they exist
+        i=$TOT_BKP
+        while [ "$i" -gt 0 ]; do
+                j=$(($i-1))
+                if ssh $USER@$SERVER stat $SERVER_DIR/pgsql/db/$db.sql.daily.$j.gz > /dev/null 2>&1 ; then
+                        ssh $USER@$SERVER mv $SERVER_DIR/pgsql/db/$db.sql.daily.$j.gz $SERVER_DIR/pgsql/db/$db.sql.daily.$i.gz
+                fi
+                i=$((i-1))
+        done
+
+        # step 15: dump local database to temporary file
+        pg_dump -U postgres -p 5432 $db | gzip > "/tmp/$db.sql.daily.0.gz"
+
+        # step 16: copy local database dump to server
+        scp /tmp/$db.sql.daily.0.gz $USER@$SERVER:$SERVER_DIR/pgsql/db/
+
+        # step 17: remove local temp dump file
+        rm /tmp/$db.sql.daily.0.gz
+
 # step 12-end: for each local database
 done
 
