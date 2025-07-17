@@ -29,7 +29,7 @@ local   replication     postgres        trust
 USER=<user name in backup server>
 SERVER=<IP or server name>
 SERVER_DIR=<Remote directory to store files (for multiple servers)>
-LOCAL_DIR=<Local directory to backup>
+LOCAL_DIR=<Local directories to backup separated by :>
 DO_MYSQL_BACKUP=1 # do mysql backup?
 DO_PGSQL_BACKUP=0 # do postgresql backup?
 DO_DOKKU_DB_BACKUP=0 # do dokku db backup?
