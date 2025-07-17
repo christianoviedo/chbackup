@@ -225,7 +225,7 @@ DATE_TAG=$(date +%F)
 mkdir -p "$TMP_DIR"
 
 # Verifica plugins instalados
-DOKKU_PLUGINS=$(dokku plugin:list | awk '{print $1}')
+DOKKU_PLUGINS=$(dokku plugin:list | awk '{print $1}' | paste -sd ' ' -)
 
 # Función para rotar backups
 rotate_backups() {
@@ -248,13 +248,13 @@ rotate_backups() {
 
 # Crea carpetas necesarias en servidor remoto
 for plugin in "${REMOTE_DIRS[@]}"; do
-    if echo "$DOKKU_PLUGINS" | grep -q "$plugin:"; then
+    if [[ " $DOKKU_PLUGINS " =~ " $plugin " ]]; then
         ssh $USER@$SERVER mkdir -p "$SERVER_DIR/$plugin/db"
     fi
 done
 
 # PostgreSQL
-if echo "$DOKKU_PLUGINS" | grep -q "postgres:"; then
+if [[ " $DOKKU_PLUGINS " =~ " postgres " ]]; then
     dokku postgres:list | tail -n +2 | awk '{print $1}' | while read db; do
         echo "Backing up PostgreSQL DB: $db"
         rotate_backups "postgres" "$db"
@@ -266,7 +266,7 @@ if echo "$DOKKU_PLUGINS" | grep -q "postgres:"; then
 fi
 
 # MySQL
-if echo "$DOKKU_PLUGINS" | grep -q "mysql:"; then
+if [[ " $DOKKU_PLUGINS " =~ " mysql " ]]; then
     dokku mysql:list | tail -n +2 | awk '{print $1}' | while read db; do
         echo "Backing up MySQL DB: $db"
         rotate_backups "mysql" "$db"
@@ -278,7 +278,7 @@ if echo "$DOKKU_PLUGINS" | grep -q "mysql:"; then
 fi
 
 # MongoDB
-if echo "$DOKKU_PLUGINS" | grep -q "mongo:"; then
+if [[ " $DOKKU_PLUGINS " =~ " mongo " ]]; then
     dokku mongo:list | tail -n +2 | awk '{print $1}' | while read db; do
         echo "Backing up MongoDB DB: $db"
         rotate_backups "mongo" "$db"
