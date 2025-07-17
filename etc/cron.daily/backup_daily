@@ -211,3 +211,86 @@ done
 
 # if database backup
 fi
+
+# ------------------------------------------------- #
+# ---------- Begin Dokku Database Backup ---------- #
+# ------------------------------------------------- #
+
+if [[ $DO_DOKKU_DB_BACKUP =~ ^[1YySs]$ ]]; then
+
+# Crear directorios remotos si no existen
+for type in postgres mysql; do
+    if ! ssh $USER@$SERVER stat $SERVER_DIR/$type > /dev/null 2>&1 ; then
+        ssh $USER@$SERVER mkdir -p $SERVER_DIR/$type
+    fi
+    if ! ssh $USER@$SERVER stat $SERVER_DIR/$type/db > /dev/null 2>&1 ; then
+        ssh $USER@$SERVER mkdir -p $SERVER_DIR/$type/db
+    fi
+done
+
+DATE_TAG=$(date +%F)
+TMP_DIR="/tmp/dokku_db_backups"
+
+mkdir -p $TMP_DIR
+
+############################################
+### PostgreSQL backups via Dokku plugin  ###
+############################################
+
+dokku postgres:list | tail -n +2 | awk '{print $1}' | while read db; do
+    echo "Backing up Dokku PostgreSQL database: $db"
+
+    # Rotar backups remotos
+    if ssh $USER@$SERVER stat $SERVER_DIR/postgres/db/$db.sql.daily.$TOT_BKP.gz > /dev/null 2>&1 ; then
+        ssh $USER@$SERVER rm $SERVER_DIR/postgres/db/$db.sql.daily.$TOT_BKP.gz
+    fi
+
+    i=$TOT_BKP
+    while [ "$i" -gt 0 ]; do
+        j=$(($i-1))
+        if ssh $USER@$SERVER stat $SERVER_DIR/postgres/db/$db.sql.daily.$j.gz > /dev/null 2>&1 ; then
+            ssh $USER@$SERVER mv $SERVER_DIR/postgres/db/$db.sql.daily.$j.gz $SERVER_DIR/postgres/db/$db.sql.daily.$i.gz
+        fi
+        i=$((i-1))
+    done
+
+    # Exportar y comprimir
+    dokku postgres:export $db > "$TMP_DIR/$db.sql.daily.0"
+    gzip "$TMP_DIR/$db.sql.daily.0"
+
+    # Subir
+    scp "$TMP_DIR/$db.sql.daily.0.gz" $USER@$SERVER:$SERVER_DIR/postgres/db/
+    rm "$TMP_DIR/$db.sql.daily.0.gz"
+done
+
+#########################################
+### MySQL backups via Dokku plugin    ###
+#########################################
+
+dokku mysql:list | tail -n +2 | awk '{print $1}' | while read db; do
+    echo "Backing up Dokku MySQL database: $db"
+
+    if ssh $USER@$SERVER stat $SERVER_DIR/mysql/db/$db.sql.daily.$TOT_BKP.gz > /dev/null 2>&1 ; then
+        ssh $USER@$SERVER rm $SERVER_DIR/mysql/db/$db.sql.daily.$TOT_BKP.gz
+    fi
+
+    i=$TOT_BKP
+    while [ "$i" -gt 0 ]; do
+        j=$(($i-1))
+        if ssh $USER@$SERVER stat $SERVER_DIR/mysql/db/$db.sql.daily.$j.gz > /dev/null 2>&1 ; then
+            ssh $USER@$SERVER mv $SERVER_DIR/mysql/db/$db.sql.daily.$j.gz $SERVER_DIR/mysql/db/$db.sql.daily.$i.gz
+        fi
+        i=$((i-1))
+    done
+
+    dokku mysql:export $db > "$TMP_DIR/$db.sql.daily.0"
+    gzip "$TMP_DIR/$db.sql.daily.0"
+
+    scp "$TMP_DIR/$db.sql.daily.0.gz" $USER@$SERVER:$SERVER_DIR/mysql/db/
+    rm "$TMP_DIR/$db.sql.daily.0.gz"
+done
+
+# Cleanup local temp dir
+rm -rf "$TMP_DIR"
+
+fi
