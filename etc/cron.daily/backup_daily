@@ -218,77 +218,76 @@ fi
 
 if [[ $DO_DOKKU_DB_BACKUP =~ ^[1YySs]$ ]]; then
 
-# Crear directorios remotos si no existen
-for type in postgres mysql; do
-    if ! ssh $USER@$SERVER stat $SERVER_DIR/$type > /dev/null 2>&1 ; then
-        ssh $USER@$SERVER mkdir -p $SERVER_DIR/$type
-    fi
-    if ! ssh $USER@$SERVER stat $SERVER_DIR/$type/db > /dev/null 2>&1 ; then
-        ssh $USER@$SERVER mkdir -p $SERVER_DIR/$type/db
-    fi
-done
-
-DATE_TAG=$(date +%F)
+REMOTE_DIRS=("postgres" "mysql" "mongo")
 TMP_DIR="/tmp/dokku_db_backups"
+DATE_TAG=$(date +%F)
 
-mkdir -p $TMP_DIR
+mkdir -p "$TMP_DIR"
 
-############################################
-### PostgreSQL backups via Dokku plugin  ###
-############################################
+# Verifica plugins instalados
+DOKKU_PLUGINS=$(dokku plugin:list | awk '{print $1}')
 
-dokku postgres:list | tail -n +2 | awk '{print $1}' | while read db; do
-    echo "Backing up Dokku PostgreSQL database: $db"
+# Función para rotar backups
+rotate_backups() {
+    local plugin=$1
+    local db=$2
 
-    # Rotar backups remotos
-    if ssh $USER@$SERVER stat $SERVER_DIR/postgres/db/$db.sql.daily.$TOT_BKP.gz > /dev/null 2>&1 ; then
-        ssh $USER@$SERVER rm $SERVER_DIR/postgres/db/$db.sql.daily.$TOT_BKP.gz
+    if ssh $USER@$SERVER stat "$SERVER_DIR/$plugin/db/$db.sql.daily.$TOT_BKP.gz" > /dev/null 2>&1 ; then
+        ssh $USER@$SERVER rm "$SERVER_DIR/$plugin/db/$db.sql.daily.$TOT_BKP.gz"
     fi
 
-    i=$TOT_BKP
+    local i=$TOT_BKP
     while [ "$i" -gt 0 ]; do
-        j=$(($i-1))
-        if ssh $USER@$SERVER stat $SERVER_DIR/postgres/db/$db.sql.daily.$j.gz > /dev/null 2>&1 ; then
-            ssh $USER@$SERVER mv $SERVER_DIR/postgres/db/$db.sql.daily.$j.gz $SERVER_DIR/postgres/db/$db.sql.daily.$i.gz
+        local j=$((i - 1))
+        if ssh $USER@$SERVER stat "$SERVER_DIR/$plugin/db/$db.sql.daily.$j.gz" > /dev/null 2>&1 ; then
+            ssh $USER@$SERVER mv "$SERVER_DIR/$plugin/db/$db.sql.daily.$j.gz" "$SERVER_DIR/$plugin/db/$db.sql.daily.$i.gz"
         fi
-        i=$((i-1))
+        i=$((i - 1))
     done
+}
 
-    # Exportar y comprimir
-    dokku postgres:export $db > "$TMP_DIR/$db.sql.daily.0"
-    gzip "$TMP_DIR/$db.sql.daily.0"
-
-    # Subir
-    scp "$TMP_DIR/$db.sql.daily.0.gz" $USER@$SERVER:$SERVER_DIR/postgres/db/
-    rm "$TMP_DIR/$db.sql.daily.0.gz"
-done
-
-#########################################
-### MySQL backups via Dokku plugin    ###
-#########################################
-
-dokku mysql:list | tail -n +2 | awk '{print $1}' | while read db; do
-    echo "Backing up Dokku MySQL database: $db"
-
-    if ssh $USER@$SERVER stat $SERVER_DIR/mysql/db/$db.sql.daily.$TOT_BKP.gz > /dev/null 2>&1 ; then
-        ssh $USER@$SERVER rm $SERVER_DIR/mysql/db/$db.sql.daily.$TOT_BKP.gz
+# Crea carpetas necesarias en servidor remoto
+for plugin in "${REMOTE_DIRS[@]}"; do
+    if echo "$DOKKU_PLUGINS" | grep -q "$plugin:"; then
+        ssh $USER@$SERVER mkdir -p "$SERVER_DIR/$plugin/db"
     fi
-
-    i=$TOT_BKP
-    while [ "$i" -gt 0 ]; do
-        j=$(($i-1))
-        if ssh $USER@$SERVER stat $SERVER_DIR/mysql/db/$db.sql.daily.$j.gz > /dev/null 2>&1 ; then
-            ssh $USER@$SERVER mv $SERVER_DIR/mysql/db/$db.sql.daily.$j.gz $SERVER_DIR/mysql/db/$db.sql.daily.$i.gz
-        fi
-        i=$((i-1))
-    done
-
-    dokku mysql:export $db > "$TMP_DIR/$db.sql.daily.0"
-    gzip "$TMP_DIR/$db.sql.daily.0"
-
-    scp "$TMP_DIR/$db.sql.daily.0.gz" $USER@$SERVER:$SERVER_DIR/mysql/db/
-    rm "$TMP_DIR/$db.sql.daily.0.gz"
 done
+
+# PostgreSQL
+if echo "$DOKKU_PLUGINS" | grep -q "postgres:"; then
+    dokku postgres:list | tail -n +2 | awk '{print $1}' | while read db; do
+        echo "Backing up PostgreSQL DB: $db"
+        rotate_backups "postgres" "$db"
+        dokku postgres:export "$db" > "$TMP_DIR/$db.sql.daily.0"
+        gzip "$TMP_DIR/$db.sql.daily.0"
+        scp "$TMP_DIR/$db.sql.daily.0.gz" $USER@$SERVER:$SERVER_DIR/postgres/db/
+        rm "$TMP_DIR/$db.sql.daily.0.gz"
+    done
+fi
+
+# MySQL
+if echo "$DOKKU_PLUGINS" | grep -q "mysql:"; then
+    dokku mysql:list | tail -n +2 | awk '{print $1}' | while read db; do
+        echo "Backing up MySQL DB: $db"
+        rotate_backups "mysql" "$db"
+        dokku mysql:export "$db" > "$TMP_DIR/$db.sql.daily.0"
+        gzip "$TMP_DIR/$db.sql.daily.0"
+        scp "$TMP_DIR/$db.sql.daily.0.gz" $USER@$SERVER:$SERVER_DIR/mysql/db/
+        rm "$TMP_DIR/$db.sql.daily.0.gz"
+    done
+fi
+
+# MongoDB
+if echo "$DOKKU_PLUGINS" | grep -q "mongo:"; then
+    dokku mongo:list | tail -n +2 | awk '{print $1}' | while read db; do
+        echo "Backing up MongoDB DB: $db"
+        rotate_backups "mongo" "$db"
+        dokku mongo:export "$db" > "$TMP_DIR/$db.sql.daily.0"
+        gzip "$TMP_DIR/$db.sql.daily.0"
+        scp "$TMP_DIR/$db.sql.daily.0.gz" $USER@$SERVER:$SERVER_DIR/mongo/db/
+        rm "$TMP_DIR/$db.sql.daily.0.gz"
+    done
+fi
 
 # Cleanup local temp dir
 rm -rf "$TMP_DIR"
