@@ -47,7 +47,10 @@ fi
 if [ ! -z $DELETE_MISSING ] && [ "$DELETE_MISSING" = "1" ]; then do_delete='--delete'; fi
 IFS=':' read -ra DIRS <<< "$LOCAL_DIR"
 for dir in "${DIRS[@]}"; do
-    rsync -avzq $do_delete --exclude-from '/etc/chbackup/exclude-list.conf' --log-file=$LOGFILE "$dir" $USER@$SERVER:$SERVER_DIR/backup/daily.0/
+    # Ensure the parent path exists on the remote
+    ssh $USER@$SERVER "mkdir -p '$SERVER_DIR/backup/daily.0$(dirname "$dir")'"
+    # Rsync the content to the exact matching path
+    rsync -avzq $do_delete --exclude-from '/etc/chbackup/exclude-list.conf' --log-file=$LOGFILE "$dir/" "$USER@$SERVER:$SERVER_DIR/backup/daily.0$dir/"
 done
 
 # step 5: update the mtime of daily.0 to reflect the snapshot time
