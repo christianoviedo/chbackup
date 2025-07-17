@@ -1,5 +1,5 @@
 # ChBackup
-Linux rsync incremental backup of mysql databases and local files in an external repository.
+Linux rsync incremental backup of mysql and postgresql databases and local files in an external repository. It also can backup dokku repositories and databases.
 Default daily and weekly backups.
 
 ## Prerequisites
@@ -31,6 +31,8 @@ SERVER=<IP or server name>
 SERVER_DIR=<Remote directory to store files (for multiple servers)>
 LOCAL_DIR=<Local directory to backup>
 DO_MYSQL_BACKUP=1 # do mysql backup?
+DO_PGSQL_BACKUP=0 # do postgresql backup?
+DO_DOKKU_DB_BACKUP=0 # do dokku db backup?
 LOGFILE=/var/log/backup.log
 TOT_BKP=3 # amount of historic backups to keep on remote server
 DELETE_MISSING=1 # remove locally deleted files from backup server
