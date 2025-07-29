@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# VERSION 0.5.4
+# VERSION 0.5.5
 
 # make sure we're running as root
 if [ `id -u` -gt 0 ]; then { echo "Sorry, must be root.  Exiting..."; exit; } fi
@@ -255,37 +255,37 @@ done
 
 # PostgreSQL
 if [[ " $DOKKU_PLUGINS " =~ " postgres " ]]; then
-    dokku postgres:list | tail -n +2 | awk '{print $1}' | while read db; do
+    mapfile -t DBS < <(dokku postgres:list | tail -n +2 | awk '{print $1}')
+    for db in "${DBS[@]}"; do
         echo "Backing up PostgreSQL DB: $db"
         rotate_backups "postgres" "$db"
-        dokku postgres:export "$db" > "$TMP_DIR/$db.sql.daily.0"
+        script -q -c "dokku postgres:export $db" /dev/null > "$TMP_DIR/$db.sql.daily.0"
         gzip "$TMP_DIR/$db.sql.daily.0"
-        scp "$TMP_DIR/$db.sql.daily.0.gz" $USER@$SERVER:$SERVER_DIR/postgres/db/
-        rm "$TMP_DIR/$db.sql.daily.0.gz"
+        scp "$TMP_DIR/$db.sql.daily.0.gz" "$USER@$SERVER:$SERVER_DIR/postgres/db/"
     done
 fi
 
 # MySQL
 if [[ " $DOKKU_PLUGINS " =~ " mysql " ]]; then
-    dokku mysql:list | tail -n +2 | awk '{print $1}' | while read db; do
+    mapfile -t DBS < <(dokku mysql:list | tail -n +2 | awk '{print $1}')
+    for db in "${DBS[@]}"; do
         echo "Backing up MySQL DB: $db"
         rotate_backups "mysql" "$db"
-        dokku mysql:export "$db" > "$TMP_DIR/$db.sql.daily.0"
+        script -q -c "dokku mysql:export $db" /dev/null > "$TMP_DIR/$db.sql.daily.0"
         gzip "$TMP_DIR/$db.sql.daily.0"
         scp "$TMP_DIR/$db.sql.daily.0.gz" $USER@$SERVER:$SERVER_DIR/mysql/db/
-        rm "$TMP_DIR/$db.sql.daily.0.gz"
     done
 fi
 
 # MongoDB
 if [[ " $DOKKU_PLUGINS " =~ " mongo " ]]; then
-    dokku mongo:list | tail -n +2 | awk '{print $1}' | while read db; do
+    mapfile -t DBS < <(dokku mongo:list | tail -n +2 | awk '{print $1}')
+    for db in "${DBS[@]}"; do
         echo "Backing up MongoDB DB: $db"
         rotate_backups "mongo" "$db"
-        dokku mongo:export "$db" > "$TMP_DIR/$db.sql.daily.0"
+        script -q -c "dokku mongo:export $db" /dev/null > "$TMP_DIR/$db.sql.daily.0"
         gzip "$TMP_DIR/$db.sql.daily.0"
         scp "$TMP_DIR/$db.sql.daily.0.gz" $USER@$SERVER:$SERVER_DIR/mongo/db/
-        rm "$TMP_DIR/$db.sql.daily.0.gz"
     done
 fi
 
