@@ -38,6 +38,13 @@ TOT_BKP=3 # amount of historic backups to keep on remote server
 DELETE_MISSING=1 # remove locally deleted files from backup server
 ```
 
+These are the recommnendations for setting the LOCAL_DIR var:
+- If VESTA of LARAVEL FORGE: /home
+- If DOKKU: /home/dokku:/var/lib/dokk
+- If CAPROVER: /srv:/captain:/var/lib/docker/volumes
+
+Also if using Dokku databases don't forget to set DO_DOKKU_DB_BACKUP=1
+
 3. If mysql backup edit mysql.conf with local user/pass
 [client]
 user=
