@@ -162,11 +162,32 @@ if [[ $DO_DOKKU_BACKUP =~ ^[1YySs]$ ]]; then
   done
 
   # Dokku environment config backup
+  mapfile -t DOKKU_APPS < <(dokku apps:list | tail -n +2)
+  for app in "${DOKKU_APPS[@]}"; do
+    echo "Exporting env for $app..."
+    if dokku apps:exists "$app"; then
+      if dokku config:export "$app" > "$TMP_DIR/$app.config.env.daily.0"; then
+        gzip "$TMP_DIR/$app.config.env.daily.0"
+        scp "$TMP_DIR/$app.config.env.daily.0.gz" "$USER@$SERVER:$SERVER_DIR/env/"
+        rm "$TMP_DIR/$app.config.env.daily.0.gz"
+      else
+        echo "Warning: could not export config for $app"
+      fi
+    fi
+  done
+
+  # Dokku environment config backup
   ensure_remote_dir "$SERVER_DIR/env"
-  rotate_snapshots "env" "config"
-  dokku config:export miapp > "$TMP_DIR/config.env"
-  gzip "$TMP_DIR/config.env"
-  backup_file_to_remote "$TMP_DIR/config.env.gz" "$SERVER_DIR/env"
+
+  # Loop through each Dokku app to backup config
+  mapfile -t DOKKU_APPS < <(dokku apps:list | tail -n +2)
+  for app in "${DOKKU_APPS[@]}"; do
+    rotate_snapshots "env" "$app"
+    dokku config:export "$app" > "$TMP_DIR/$app.config.env"
+    gzip "$TMP_DIR/$app.config.env"
+    backup_file_to_remote "$TMP_DIR/$app.config.env.gz" "$SERVER_DIR/env"
+  done
+
   rm -rf "$TMP_DIR"
 
 fi
