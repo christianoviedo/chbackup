@@ -216,7 +216,7 @@ fi
 # ---------- Begin Dokku Database Backup ---------- #
 # ------------------------------------------------- #
 
-if [[ $DO_DOKKU_DB_BACKUP =~ ^[1YySs]$ ]]; then
+if [[ $DO_DOKKU_BACKUP =~ ^[1YySs]$ ]]; then
 
 REMOTE_DIRS=("postgres" "mysql" "mongo")
 TMP_DIR="/tmp/dokku_db_backups"
@@ -245,6 +245,22 @@ rotate_backups() {
         i=$((i - 1))
     done
 }
+
+# Respaldo de variables de entorno
+ssh $USER@$SERVER mkdir -p "$SERVER_DIR/env"
+dokku config:export miapp > $TMP_DIR/config.env
+if ssh $USER@$SERVER stat "$SERVER_DIR/env/config.env.daily.$TOT_BKP.gz" > /dev/null 2>&1 ; then
+	ssh $USER@$SERVER rm "$SERVER_DIR/env/config.env.daily.$TOT_BKP.gz"
+fi
+local i=$TOT_BKP
+while [ "$i" -gt 0 ]; do
+        local j=$((i - 1))
+        if ssh $USER@$SERVER stat "$SERVER_DIR/env/config.env.daily.$j.gz" > /dev/null 2>&1 ; then
+            ssh $USER@$SERVER mv "$SERVER_DIR/env/config.env.daily.$j.gz" "$SERVER_DIR/env/config.env.daily.$i.gz"
+        fi
+        i=$((i - 1))
+done
+scp "$TMP_DIR/config.env" "$USER@$SERVER:$SERVER_DIR/env/config.env.daily.0"
 
 # Crea carpetas necesarias en servidor remoto
 for plugin in "${REMOTE_DIRS[@]}"; do
