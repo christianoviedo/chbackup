@@ -183,9 +183,9 @@ if [[ $DO_DOKKU_BACKUP =~ ^[1YySs]$ ]]; then
   mapfile -t DOKKU_APPS < <(dokku apps:list | tail -n +2)
   for app in "${DOKKU_APPS[@]}"; do
     rotate_snapshots "env" "$app"
-    dokku config:export "$app" > "$TMP_DIR/$app.config.env"
-    gzip "$TMP_DIR/$app.config.env"
-    backup_file_to_remote "$TMP_DIR/$app.config.env.gz" "$SERVER_DIR/env"
+    dokku config:export "$app" > "$TMP_DIR/$app.config.env.daily.0"
+    gzip "$TMP_DIR/$app.config.env.daily.0"
+    backup_file_to_remote "$TMP_DIR/$app.config.env.daily.0.gz" "$SERVER_DIR/env"
   done
 
   rm -rf "$TMP_DIR"
