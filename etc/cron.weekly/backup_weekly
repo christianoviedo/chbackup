@@ -130,8 +130,12 @@ if [[ $DO_DOKKU_BACKUP =~ ^[1YySs]$ ]]; then
   done
 
   # Config environment
+  mapfile -t DOKKU_APPS < <(dokku apps:list | tail -n +2)
   ensure_remote_dir "$SERVER_DIR/env"
-  rotate_snapshots "env" "config"
-  copy_if_exists "$SERVER_DIR/env/config.env.daily.0.gz" "$SERVER_DIR/env/config.env.weekly.0.gz"
+  for app in "${DOKKU_APPS[@]}"; do
+    rotate_snapshots "env" "$app.config"
+    copy_if_exists "$SERVER_DIR/env/$app.config.env.daily.0.gz" "$SERVER_DIR/env/$app.config.env.weekly.0.gz"
+  done
+
 fi
 
