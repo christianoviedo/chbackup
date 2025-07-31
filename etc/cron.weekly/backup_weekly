@@ -1,181 +1,137 @@
 #!/bin/bash
 
-# VERSION 0.5.4
+# ------------------------------------------------- #
+# ----- Optimized Weekly Backup Script V1.0.0 ------#
+# ------------------------------------------------- #
 
-# make sure we're running as root
-if [ `id -u` -gt 0 ]; then { echo "Sorry, must be root.  Exiting..."; exit; } fi
+set -euo pipefail
 
-# load config values
 BACKUP_CONFIG_FILE=/etc/chbackup/backup.conf
 MYSQL_CONFIG_FILE=/etc/chbackup/mysql.conf
-source $BACKUP_CONFIG_FILE
+source "$BACKUP_CONFIG_FILE"
 
-# -------------------------------------------- #
-# ---------- Begin Files Backup -------------- #
-# -------------------------------------------- #
-
-# if files dir is set, do database backup
-if [ ! -z "$LOCAL_DIR" ]; then 
-
-# step 0: create dirs if not exist
-if ! ssh $USER@$SERVER stat $SERVER_DIR/backup > /dev/null 2>&1 ; then
-        ssh $USER@$SERVER mkdir -p $SERVER_DIR/backup
+# Ensure we're running as root
+if [[ $(id -u) -ne 0 ]]; then
+  echo "Must be run as root" >&2
+  exit 1
 fi
 
-# step 1: delete the oldest snapshot, if it exists:
-if ssh $USER@$SERVER stat $SERVER_DIR/backup/weekly.$TOT_BKP > /dev/null 2>&1 ; then
-	ssh $USER@$SERVER chmod -R u+w $SERVER_DIR/backup/weekly.$TOT_BKP 
-	ssh $USER@$SERVER rm -rf $SERVER_DIR/backup/weekly.$TOT_BKP
+# ------------------------------------------------- #
+# ---------- Helper Functions --------------------- #
+# ------------------------------------------------- #
+
+ensure_remote_dir() {
+  local dir="$1"
+  ssh "$USER@$SERVER" "mkdir -p '$dir'"
+}
+
+rotate_snapshots() {
+  local plugin="$1"
+  local db="$2"
+  local base="$SERVER_DIR/$plugin/db/$db.sql"
+  local suffix="weekly"
+  for ((i=TOT_BKP; i>0; i--)); do
+    local j=$((i - 1))
+    if ssh "$USER@$SERVER" stat "$base.$suffix.$j.gz" >/dev/null 2>&1; then
+      ssh "$USER@$SERVER" mv "$base.$suffix.$j.gz" "$base.$suffix.$i.gz"
+    fi
+  done
+  if ssh "$USER@$SERVER" stat "$base.$suffix.$TOT_BKP.gz" >/dev/null 2>&1; then
+    ssh "$USER@$SERVER" rm "$base.$suffix.$TOT_BKP.gz"
+  fi
+}
+
+copy_if_exists() {
+  local src="$1"
+  local dst="$2"
+  if ssh "$USER@$SERVER" stat "$src" >/dev/null 2>&1; then
+    ssh "$USER@$SERVER" cp "$src" "$dst"
+  fi
+}
+
+# ------------------------------------------------- #
+# ---------- Begin Files Backup ------------------- #
+# ------------------------------------------------- #
+
+if [[ -n "$LOCAL_DIR" ]]; then
+  ensure_remote_dir "$SERVER_DIR/backup"
+
+  # Rotate snapshots
+  for ((i=TOT_BKP; i>0; i--)); do
+    j=$((i-1))
+    if ssh "$USER@$SERVER" stat "$SERVER_DIR/backup/weekly.$j" >/dev/null 2>&1; then
+      ssh "$USER@$SERVER" mv "$SERVER_DIR/backup/weekly.$j" "$SERVER_DIR/backup/weekly.$i"
+    fi
+  done
+
+  # delete the oldest snapshot, if it exists:
+  if ssh "$USER@$SERVER" stat "$SERVER_DIR/backup/weekly.$TOT_BKP" >/dev/null 2>&1; then
+    ssh "$USER@$SERVER" rm -rf "$SERVER_DIR/backup/weekly.$TOT_BKP"
+  fi
+
+  # Copy daily.0 to weekly.0
+  if ssh "$USER@$SERVER" stat "$SERVER_DIR/backup/daily.0" >/dev/null 2>&1; then
+    ssh "$USER@$SERVER" cp -al "$SERVER_DIR/backup/daily.0" "$SERVER_DIR/backup/weekly.0"
+  fi
+
 fi
 
-# step 2: shift the middle snapshots(s) back by one, if they exist
-i=$TOT_BKP
-while [ "$i" -gt 0 ]; do 
-	j=$(($i-1))
-	if ssh $USER@$SERVER stat $SERVER_DIR/backup/weekly.$j > /dev/null 2>&1 ; then
-		ssh $USER@$SERVER mv $SERVER_DIR/backup/weekly.$j $SERVER_DIR/backup/weekly.$i
-	fi
-	i=$((i-1))
-done
+# ------------------------------------------------- #
+# ---------- Begin MySQL Backup ------------------- #
+# ------------------------------------------------- #
 
-# step 3: make a hard-link-only (except for dirs) copy of the daily snapshot, if that exists
-if ssh $USER@$SERVER stat $SERVER_DIR/backup/daily.0 > /dev/null 2>&1 ; then
-	ssh $USER@$SERVER cp -al $SERVER_DIR/backup/daily.0 $SERVER_DIR/backup/weekly.0
-fi
-
-# end if files backup
-fi
-
-# -------------------------------------------- #
-# ---------- Begin Mysql Backup -------------- #
-# -------------------------------------------- #
-
-# if mysql user is set, do database backup
 if [[ $DO_MYSQL_BACKUP =~ ^[1YySs]$ ]]; then
+  ensure_remote_dir "$SERVER_DIR/mysql/db"
 
-# step 0: create dirs if not exist
-if ! ssh $USER@$SERVER stat $SERVER_DIR/mysql > /dev/null 2>&1 ; then
-        ssh $USER@$SERVER mkdir -p $SERVER_DIR/mysql
-fi
-if ! ssh $USER@$SERVER stat $SERVER_DIR/mysql/db > /dev/null 2>&1 ; then
-        ssh $USER@$SERVER mkdir -p $SERVER_DIR/mysql/db
-fi
+  # Global MySQL
+  rotate_snapshots "mysql" "all_mysql"
+  copy_if_exists "$SERVER_DIR/mysql/all_mysql.sql.daily.0.gz" "$SERVER_DIR/mysql/all_mysql.sql.weekly.0.gz"
 
-# step 4: delete the oldest database, if it exists:
-if ssh $USER@$SERVER stat $SERVER_DIR/mysql/all_mysql.sql.weekly.$TOT_BKP.gz > /dev/null 2>&1 ; then
-	ssh $USER@$SERVER rm $SERVER_DIR/mysql/all_mysql.sql.weekly.$TOT_BKP.gz
-fi
-
-# step 5: shift the middle snapshots(s) back by one, if they exist
-i=$TOT_BKP
-while [ "$i" -gt 0 ]; do
-        j=$(($i-1))
-	if ssh $USER@$SERVER stat $SERVER_DIR/mysql/all_mysql.sql.weekly.$j.gz > /dev/null 2>&1 ; then
-		ssh $USER@$SERVER mv $SERVER_DIR/mysql/all_mysql.sql.weekly.$j.gz $SERVER_DIR/mysql/all_mysql.sql.weekly.$i.gz
-	fi
-	i=$((i-1))
-done
-
-# step 6: copy the daily database to weekly, if it exists
-if ssh $USER@$SERVER stat $SERVER_DIR/mysql/all_mysql.sql.daily.0.gz > /dev/null 2>&1 ; then
-	ssh $USER@$SERVER cp $SERVER_DIR/mysql/all_mysql.sql.daily.0.gz $SERVER_DIR/mysql/all_mysql.sql.weekly.0.gz
-fi
-
-# step 7: get list of local databases
-databases=`mysql --defaults-extra-file=$MYSQL_CONFIG_FILE -e "SHOW DATABASES;" | grep -Ev "(Database|information_schema|performance_schema)"`
-
-# step 8: for each local database
-for db in $databases; do
-
-	# step 9: delete oldest database if it exists
-	if ssh $USER@$SERVER stat $SERVER_DIR/mysql/db/$db.sql.weekly.$TOT_BKP.gz > /dev/null 2>&1 ; then
-		ssh $USER@$SERVER rm $SERVER_DIR/mysql/db/$db.sql.weekly.$TOT_BKP.gz
-	fi
-	
-	# step 10: shift the middle snapshots(s) back by one, if they exist
-	i=$TOT_BKP
-	while [ "$i" -gt 0 ]; do
-		j=$(($i-1))
-		if ssh $USER@$SERVER stat $SERVER_DIR/mysql/db/$db.sql.weekly.$j.gz > /dev/null 2>&1 ; then
-			ssh $USER@$SERVER mv $SERVER_DIR/mysql/db/$db.sql.weekly.$j.gz $SERVER_DIR/mysql/db/$db.sql.weekly.$i.gz
-		fi
-		i=$((i-1))
-	done
-
-	# step 11: copy the daily database to weekly, if it exists
-	if ssh $USER@$SERVER stat $SERVER_DIR/mysql/db/$db.sql.daily.0.gz > /dev/null 2>&1 ; then
-		ssh $USER@$SERVER cp $SERVER_DIR/mysql/db/$db.sql.daily.0.gz $SERVER_DIR/mysql/db/$db.sql.weekly.0.gz
-	fi
-
-# step 8-end: for each local database
-done
-
-# if database backup
+  databases=$(mysql --defaults-extra-file="$MYSQL_CONFIG_FILE" -e "SHOW DATABASES;" | grep -Ev "^(Database|information_schema|performance_schema|mysql|sys)")
+  for db in $databases; do
+    rotate_snapshots "mysql" "$db"
+    copy_if_exists "$SERVER_DIR/mysql/db/$db.sql.daily.0.gz" "$SERVER_DIR/mysql/db/$db.sql.weekly.0.gz"
+  done
 fi
 
 # ------------------------------------------------- #
 # ---------- Begin PostgreSQL Backup -------------- #
 # ------------------------------------------------- #
 
-# if mysql user is set, do database backup
 if [[ $DO_PGSQL_BACKUP =~ ^[1YySs]$ ]]; then
+  ensure_remote_dir "$SERVER_DIR/pgsql/db"
 
-# step 0: create dirs if not exist
-if ! ssh $USER@$SERVER stat $SERVER_DIR/pgsql > /dev/null 2>&1 ; then
-        ssh $USER@$SERVER mkdir -p $SERVER_DIR/pgsql
-fi
-if ! ssh $USER@$SERVER stat $SERVER_DIR/pgsql/db > /dev/null 2>&1 ; then
-        ssh $USER@$SERVER mkdir -p $SERVER_DIR/pgsql/db
-fi
+  rotate_snapshots "pgsql" "all_pgsql"
+  copy_if_exists "$SERVER_DIR/pgsql/all_pgsql.sql.daily.0.gz" "$SERVER_DIR/pgsql/all_pgsql.sql.weekly.0.gz"
 
-# step 6: delete the oldest database, if it exists:
-if ssh $USER@$SERVER stat $SERVER_DIR/pgsql/all_pgsql.sql.weekly.$TOT_BKP.gz > /dev/null 2>&1 ; then
-        ssh $USER@$SERVER rm $SERVER_DIR/pgsql/all_pgsql.sql.weekly.$TOT_BKP.gz
+  databases=$(psql -U postgres -Atc "SELECT datname FROM pg_database WHERE datname NOT IN ('template0','template1','postgres')")
+  for db in $databases; do
+    rotate_snapshots "pgsql" "$db"
+    copy_if_exists "$SERVER_DIR/pgsql/db/$db.sql.daily.0.gz" "$SERVER_DIR/pgsql/db/$db.sql.weekly.0.gz"
+  done
 fi
 
-# step 7: shift the middle snapshots(s) back by one, if they exist
-i=$TOT_BKP
-while [ "$i" -gt 0 ]; do
-        j=$(($i-1))
-        if ssh $USER@$SERVER stat $SERVER_DIR/pgsql/all_pgsql.sql.weekly.$j.gz > /dev/null 2>&1 ; then
-                ssh $USER@$SERVER mv $SERVER_DIR/pgsql/all_pgsql.sql.weekly.$j.gz $SERVER_DIR/pgsql/all_pgsql.sql.weekly.$i.gz
-        fi
-        i=$((i-1))
-done
+# ------------------------------------------------- #
+# ---------- Begin Dokku Backup ------------------- #
+# ------------------------------------------------- #
 
-# step 6: copy the daily database to weekly, if it exists
-if ssh $USER@$SERVER stat $SERVER_DIR/pgsql/all_pgsql.sql.daily.0.gz > /dev/null 2>&1 ; then
-	ssh $USER@$SERVER cp $SERVER_DIR/pgsql/all_pgsql.sql.daily.0.gz $SERVER_DIR/pgsql/all_pgsql.sql.weekly.0.gz
+if [[ $DO_DOKKU_BACKUP =~ ^[1YySs]$ ]]; then
+  DOKKU_PLUGINS=$(dokku plugin:list | awk '{print $1}' | paste -sd ' ' -)
+
+  for plugin in postgres mysql mongo; do
+    if [[ " $DOKKU_PLUGINS " =~ " $plugin " ]]; then
+      ensure_remote_dir "$SERVER_DIR/$plugin/db"
+      mapfile -t DBS < <(dokku $plugin:list | tail -n +2 | awk '{print $1}')
+      for db in "${DBS[@]}"; do
+        rotate_snapshots "$plugin" "$db"
+        copy_if_exists "$SERVER_DIR/$plugin/db/$db.sql.daily.0.gz" "$SERVER_DIR/$plugin/db/$db.sql.weekly.0.gz"
+      done
+    fi
+  done
+
+  # Config environment
+  ensure_remote_dir "$SERVER_DIR/env"
+  rotate_snapshots "env" "config"
+  copy_if_exists "$SERVER_DIR/env/config.env.daily.0.gz" "$SERVER_DIR/env/config.env.weekly.0.gz"
 fi
 
-# step 11: get list of local databases
-databases=`echo "SELECT datname FROM pg_database;" | psql -U postgres | tail -n +3 | head -n -2 | egrep -v 'template0|template1'`
-
-# step 12: for each local database
-for db in $databases; do
-
-        # step 13: delete oldest database if it exists
-        if ssh $USER@$SERVER stat $SERVER_DIR/pgsql/db/$db.sql.weekly.$TOT_BKP.gz > /dev/null 2>&1 ; then
-                ssh $USER@$SERVER rm $SERVER_DIR/pgsql/db/$db.sql.weekly.$TOT_BKP.gz
-        fi
-
-        # step 14: shift the middle snapshots(s) back by one, if they exist
-        i=$TOT_BKP
-        while [ "$i" -gt 0 ]; do
-                j=$(($i-1))
-                if ssh $USER@$SERVER stat $SERVER_DIR/pgsql/db/$db.sql.weekly.$j.gz > /dev/null 2>&1 ; then
-                        ssh $USER@$SERVER mv $SERVER_DIR/pgsql/db/$db.sql.weekly.$j.gz $SERVER_DIR/pgsql/db/$db.sql.weekly.$i.gz
-                fi
-                i=$((i-1))
-        done
-
-        # step 11: copy the daily database to weekly, if it exists
-        if ssh $USER@$SERVER stat $SERVER_DIR/pgsql/db/$db.sql.daily.0.gz > /dev/null 2>&1 ; then
-                ssh $USER@$SERVER cp $SERVER_DIR/pgsql/db/$db.sql.daily.0.gz $SERVER_DIR/pgsql/db/$db.sql.weekly.0.gz
-        fi
-
-# step 12-end: for each local database
-done
-
-# if database backup
-fi
