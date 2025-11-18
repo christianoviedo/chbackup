@@ -98,13 +98,16 @@ fi
 # ---------- Begin PostgreSQL Backup -------------- #
 # ------------------------------------------------- #
 
+PSQL_BIN="$(command -v psql || echo /usr/bin/psql)"
+PSQL="sudo -u postgres $PSQL_BIN"
+
 if [[ $DO_PGSQL_BACKUP =~ ^[1YySs]$ ]]; then
   ensure_remote_dir "$SERVER_DIR/pgsql/db"
 
   rotate_snapshots "pgsql" "all_pgsql"
   copy_if_exists "$SERVER_DIR/pgsql/all_pgsql.sql.daily.0.gz" "$SERVER_DIR/pgsql/all_pgsql.sql.weekly.0.gz"
 
-  databases=$(psql -U postgres -Atc "SELECT datname FROM pg_database WHERE datname NOT IN ('template0','template1','postgres')")
+  databases=$($PSQL -Atc "SELECT datname FROM pg_database WHERE datname NOT IN ('template0','template1','postgres')")
   for db in $databases; do
     rotate_snapshots "pgsql" "$db"
     copy_if_exists "$SERVER_DIR/pgsql/db/$db.sql.daily.0.gz" "$SERVER_DIR/pgsql/db/$db.sql.weekly.0.gz"
