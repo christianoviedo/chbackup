@@ -117,24 +117,34 @@ fi
 # ---------- Begin PostgreSQL Backup -------------- #
 # ------------------------------------------------- #
 
+PG_BASEBACKUP_BIN="$(command -v pg_basebackup || echo /usr/bin/pg_basebackup)"
+PG_DUMP_BIN="$(command -v pg_dump || echo /usr/bin/pg_dump)"
+PSQL_BIN="$(command -v psql || echo /usr/bin/psql)"
+
+# Ejecutar siempre como usuario del sistema postgres
+PG_BASEBACKUP="sudo -u postgres $PG_BASEBACKUP_BIN"
+PG_DUMP="sudo -u postgres $PG_DUMP_BIN"
+PSQL="sudo -u postgres $PSQL_BIN"
+
 if [[ $DO_PGSQL_BACKUP =~ ^[1YySs]$ ]]; then
   ensure_remote_dir "$SERVER_DIR/pgsql/db"
 
   # Global pg_basebackup
   rotate_snapshots "pgsql" "all_pgsql"
-  pg_basebackup -Ft -Xs -D /tmp/all_pgsql.sql.daily.0 -U postgres -p 5432
+  $PG_BASEBACKUP -Ft -Xs -D /tmp/all_pgsql.sql.daily.0 -p 5432
   tar zcvf /tmp/all_pgsql.sql.daily.0.tar.gz /tmp/all_pgsql.sql.daily.0
   rm -rf /tmp/all_pgsql.sql.daily.0
   backup_file_to_remote "/tmp/all_pgsql.sql.daily.0.tar.gz" "$SERVER_DIR/pgsql"
 
   # Per-database dumps
-  databases=$(psql -U postgres -Atc "SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres')")
+  databases=$($PSQL -Atc "SELECT datname FROM pg_database WHERE datname NOT IN ('template0', 'template1', 'postgres')")
   for db in $databases; do
     rotate_snapshots "pgsql" "$db"
-    pg_dump -U postgres -p 5432 "$db" | gzip > "/tmp/$db.sql.daily.0.gz"
+    $PG_DUMP -p 5432 "$db" | gzip > "/tmp/$db.sql.daily.0.gz"
     backup_file_to_remote "/tmp/$db.sql.daily.0.gz" "$SERVER_DIR/pgsql/db"
   done
 fi
+
 
 # ------------------------------------------------- #
 # ---------- Begin Dokku Database Backup ---------- #
